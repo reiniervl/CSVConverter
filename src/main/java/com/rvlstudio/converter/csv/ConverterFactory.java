@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
 /**
  * ConverterFactory
  */
-class ConverterFactory {
+public class ConverterFactory {
 	private List<TypeAdapter<?>> adapters = new ArrayList<>();
 
 	ConverterFactory(List<TypeAdapter<?>> adapters) {
