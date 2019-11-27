@@ -1,6 +1,5 @@
 package com.rvlstudio.converter.csv;
 
-import java.util.Set;
 import java.util.List;
 
 /**
@@ -13,7 +12,7 @@ public interface CSV {
 	 * 
 	 * @return Unique set of column names or null if not present
 	 */
-	Set<String> getHeaders();
+	List<String> getHeaders();
 
 	/**
 	 * The list of rows is not ordered, but the order is not

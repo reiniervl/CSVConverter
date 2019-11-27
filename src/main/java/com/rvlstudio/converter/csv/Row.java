@@ -3,7 +3,7 @@ package com.rvlstudio.converter.csv;
 import java.util.List;
 
 /**
- * CSVRow
+ * CSV Row
  */
 public interface Row {
 

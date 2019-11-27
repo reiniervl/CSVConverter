@@ -9,15 +9,21 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
-import java.util.Set;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
  * ConverterFactory
  */
 class ConverterFactory {
+	private List<TypeAdapter<?>> adapters = new ArrayList<>();
+
+	ConverterFactory(List<TypeAdapter<?>> adapters) {
+		this.adapters = adapters;
+	}
+
 	private List<Cell> findProperties(Object o) {
-		return findProperties(o, null);
+		return findProperties(o, "");
 	}
 
 	private List<Cell> findProperties(Object o, String prefix) {
@@ -31,11 +37,18 @@ class ConverterFactory {
 					.filter(pd -> pd.getReadMethod() != null && pd.getPropertyType() != java.lang.Class.class)
 					.collect(Collectors.toList());
 
-			for (PropertyDescriptor pd : descriptors) {
-				if (Collection.class.isAssignableFrom(pd.getPropertyType()))
-					cells.addAll(findListProperties(((Collection<?>) getValue(pd, o)), pd.getName()));
-				else
-					cells.add(toCell(pd, o, prefix));
+			Optional<TypeAdapter<?>> adapter =
+					adapters.stream().filter((a) -> a.getType().isAssignableFrom(o.getClass())).findAny();
+			if (adapter.isPresent()) {
+				cells.add(adapter.get().createCell(o, prefix + "/"));
+			} else {
+
+				for (PropertyDescriptor pd : descriptors) {
+					if (Collection.class.isAssignableFrom(pd.getPropertyType()))
+						cells.addAll(findListProperties(((Collection<?>) getValue(pd, o)), pd.getName()));
+					else
+						cells.add(toCell(pd, o, prefix));
+				}
 			}
 		} catch (IntrospectionException e) {
 			e.printStackTrace();
@@ -48,18 +61,28 @@ class ConverterFactory {
 
 		int i = 0;
 		for (Object o : collection) {
-			if (o.getClass().isPrimitive() || o.getClass() == String.class) {
+			if (o.getClass().getGenericSuperclass().getTypeName().equals("java.lang.Number")
+					|| o.getClass() == String.class) {
 				cells.add(toCell(container + "/" + i++, o));
 			} else {
-				cells.addAll(findProperties(o, container+ "/" + i++));
+				cells.addAll(findProperties(o, container + "/" + i++));
 			}
 		}
 
 		return cells;
 	}
 
+	private Object getValue(PropertyDescriptor pd, Object o) {
+		try {
+			return pd.getReadMethod().invoke(o);
+		} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+
 	private Cell toCell(PropertyDescriptor pd, Object o, String prefix) {
-		return toCell(prefix == null ? pd.getName() : prefix + "/" + pd.getName(), getValue(pd, o));
+		return toCell(prefix.isEmpty() ? pd.getName() : prefix + "/" + pd.getName(), getValue(pd, o));
 	}
 
 	private Cell toCell(String name, Object o) {
@@ -89,68 +112,78 @@ class ConverterFactory {
 		};
 	}
 
-	private Object getValue(PropertyDescriptor pd, Object o) {
-		try {
-			return pd.getReadMethod().invoke(o);
-		} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-			e.printStackTrace();
+	private static List<Row> getRows(Object o, ConverterFactory factory) {
+		if (Collection.class.isAssignableFrom(o.getClass())) {
+			return ((Collection<?>) o).stream().map(factory::findProperties).map(factory::createRow)
+					.collect(Collectors.toList());
+		} else {
+			return Arrays.asList(factory.createRow(factory.findProperties(o)));
 		}
-		return null;
 	}
 
-	public static Converter creatConverter(boolean headers) {
+	private Row createRow(List<Cell> cell) {
+		return new Row() {
+			private List<Cell> cells = cell;
+
+			@Override
+			public List<Cell> getCells() {
+				return cells;
+			}
+		};
+	}
+
+	public static Converter creatConverter() {
 		return new Converter() {
+			private List<TypeAdapter<?>> adapters = new ArrayList<>();
+
 			@Override
 			public CSV convert(Object o) {
 
-				return new CSV(){
-					private List<Row> rows = Arrays.asList(new Row(){
-					
-						private List<Cell> cells = new ConverterFactory().findProperties(o, null);
-						@Override
-						public List<Cell> getCells() {
-							return cells;
-						}
-					});
-				
+				return new CSV() {
+					private List<Row> rows = ConverterFactory.getRows(o, new ConverterFactory(adapters));
+
 					@Override
 					public List<Row> getRows() {
 						return rows;
 					}
-				
+
 					@Override
-					public Set<String> getHeaders() {
-						if(!rows.isEmpty()) return rows.get(0).getCells().stream().map(Cell::getColumnName).collect(Collectors.toSet());
+					public List<String> getHeaders() {
+						if (rows != null && !rows.isEmpty()) {
+							return rows.stream().max((r1, r2) -> r1.getCells().size() - r2.getCells().size())
+									.get().getCells().stream().map(Cell::getColumnName).collect(Collectors.toList());
+						}
 						return null;
+					}
+
+					@Override
+					public String toString() {
+						List<String> columns = getHeaders();
+						StringBuilder builder = new StringBuilder(String.join(";", columns)).append("\r\n");
+						for (Row row : rows) {
+							List<String> rowData = new ArrayList<>();
+							for (String column : columns) {
+								Optional<Cell> result = row.getCells().stream()
+										.filter(c -> c.getColumnName().equals(column)).findFirst();
+								rowData.add(
+										result.isPresent() && result.get().hasData() ? result.get().getData() : "");
+							}
+							builder.append(String.join(";", rowData)).append("\r\n");
+						}
+						return builder.toString();
 					}
 				};
 			}
 
 			@Override
 			public <T extends Collection<?>> CSV convert(T collection) {
-				ConverterFactory factory = new ConverterFactory();
-				List<Row> csvRows = collection.stream().map(factory::findProperties).map(l -> new Row(){
-					private List<Cell> cells = l;
-				
-					@Override
-					public List<Cell> getCells() {
-						return cells;
-					}
-				}).collect(Collectors.toList());
+				return convert((Object) collection);
+			}
 
-				return new CSV(){
-					private List<Row> rows = csvRows;
-					@Override
-					public List<Row> getRows() {
-						return rows;
-					}
-				
-					@Override
-					public Set<String> getHeaders() {
-						if(!rows.isEmpty()) return rows.get(0).getCells().stream().map(Cell::getColumnName).collect(Collectors.toSet());
-						return null;
-					}
-				};
+			@Override
+			public <T> Converter registerTypeAdapter(TypeAdapter<T> adapter) {
+				this.adapters.add(adapter);
+				return this;
 			}
 		};
 	}
