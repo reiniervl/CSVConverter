@@ -8,18 +8,29 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
  * ConverterFactory
+ *
+ * Creeert een implementatie van de Converter om Objecten om te zetten naar CSV
  */
 public class ConverterFactory {
-	private List<TypeAdapter<?>> adapters = new ArrayList<>();
+	private static String delimiter;
+	private static boolean quoated, headers;
+	private List<TypeAdapter<?>> adapters;
 
-	ConverterFactory(List<TypeAdapter<?>> adapters) {
+	private ConverterFactory(List<TypeAdapter<?>> adapters, Map<String, String> options) {
 		this.adapters = adapters;
+		delimiter = options.getOrDefault("delimiter", ";");
+		quoated = Boolean.parseBoolean(options.getOrDefault("quoated", "true"));
+		headers = Boolean.parseBoolean(options.getOrDefault("headers", "true"));
 	}
 
 	private List<Cell> findProperties(Object o) {
@@ -34,11 +45,11 @@ public class ConverterFactory {
 		try {
 			BeanInfo info = Introspector.getBeanInfo(o.getClass());
 			List<PropertyDescriptor> descriptors = Arrays.stream(info.getPropertyDescriptors())
-					.filter(pd -> pd.getReadMethod() != null && pd.getPropertyType() != java.lang.Class.class)
+					.filter(pd -> pd.getReadMethod() != null && pd.getPropertyType() != Class.class)
 					.collect(Collectors.toList());
 
 			Optional<TypeAdapter<?>> adapter =
-					adapters.stream().filter((a) -> a.getType().isAssignableFrom(o.getClass())).findAny();
+					adapters.stream().filter(a -> a.getType().isAssignableFrom(o.getClass())).findAny();
 			if (adapter.isPresent()) {
 				cells.add(adapter.get().createCell(o, prefix + "/"));
 			} else {
@@ -117,7 +128,7 @@ public class ConverterFactory {
 			return ((Collection<?>) o).stream().map(factory::findProperties).map(factory::createRow)
 					.collect(Collectors.toList());
 		} else {
-			return Arrays.asList(factory.createRow(factory.findProperties(o)));
+			return Collections.singletonList(factory.createRow(factory.findProperties(o)));
 		}
 	}
 
@@ -135,12 +146,13 @@ public class ConverterFactory {
 	public static Converter creatConverter() {
 		return new Converter() {
 			private List<TypeAdapter<?>> adapters = new ArrayList<>();
+			private Map<String, String> options = new HashMap<>();
 
 			@Override
 			public CSV convert(Object o) {
 
 				return new CSV() {
-					private List<Row> rows = ConverterFactory.getRows(o, new ConverterFactory(adapters));
+					private List<Row> rows = ConverterFactory.getRows(o, new ConverterFactory(adapters, options));
 
 					@Override
 					public List<Row> getRows() {
@@ -150,25 +162,33 @@ public class ConverterFactory {
 					@Override
 					public List<String> getHeaders() {
 						if (rows != null && !rows.isEmpty()) {
-							return rows.stream().max((r1, r2) -> r1.getCells().size() - r2.getCells().size())
+							return rows.stream().max(Comparator.comparingInt(r -> r.getCells().size()))
 									.get().getCells().stream().map(Cell::getColumnName).collect(Collectors.toList());
 						}
-						return null;
+						return new ArrayList<>(0);
+					}
+
+					private String rowToString(Row row, List<String> columns) {
+						List<String> rowData = new ArrayList<>();
+						for (String column : columns) {
+							Optional<Cell> result = row.getCells().stream()
+									.filter(c -> c.getColumnName().equals(column)).findFirst();
+							if(result.isPresent() && result.get().hasData()) {
+								rowData.add( quoated ? "\"" + result.get().getData()+ "\"" : result.get().getData());
+							} else {
+								rowData.add("");
+							}
+						}
+						return String.join(delimiter, rowData);
 					}
 
 					@Override
 					public String toString() {
 						List<String> columns = getHeaders();
-						StringBuilder builder = new StringBuilder(String.join(";", columns)).append("\r\n");
+						StringBuilder builder = new StringBuilder();
+						if(headers) builder.append(String.join(delimiter, columns)).append("\r\n");
 						for (Row row : rows) {
-							List<String> rowData = new ArrayList<>();
-							for (String column : columns) {
-								Optional<Cell> result = row.getCells().stream()
-										.filter(c -> c.getColumnName().equals(column)).findFirst();
-								rowData.add(
-										result.isPresent() && result.get().hasData() ? result.get().getData() : "");
-							}
-							builder.append(String.join(";", rowData)).append("\r\n");
+							builder.append(rowToString(row, columns)).append("\r\n");
 						}
 						return builder.toString();
 					}
@@ -183,6 +203,11 @@ public class ConverterFactory {
 			@Override
 			public <T> Converter registerTypeAdapter(TypeAdapter<T> adapter) {
 				this.adapters.add(adapter);
+				return this;
+			}
+
+			public Converter withOption(String name, String option) {
+				this.options.put(name, option);
 				return this;
 			}
 		};
