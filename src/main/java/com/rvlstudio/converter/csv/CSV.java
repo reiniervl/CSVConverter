@@ -22,4 +22,8 @@ public interface CSV {
 	 * @return All rows of cells
 	 */
 	List<Row> getRows();
+
+	public static Converter createConverter() {
+		return new ConverterImpl();
+	}
 }

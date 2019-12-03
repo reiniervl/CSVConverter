@@ -8,19 +8,14 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * ConverterFactory
- */
-public class ConverterFactory {
-	private List<TypeAdapter<?>> adapters = new ArrayList<>();
-
-	ConverterFactory(List<TypeAdapter<?>> adapters) {
-		this.adapters = adapters;
-	}
+class ConverterImpl implements Converter {
+	private Map<Class<?>, TypeAdapter> adapters = new HashMap<Class<?>, TypeAdapter>();
+	private Map<String, String> options = new HashMap<String, String>();
 
 	private List<Cell> findProperties(Object o) {
 		return findProperties(o, "");
@@ -37,10 +32,8 @@ public class ConverterFactory {
 					.filter(pd -> pd.getReadMethod() != null && pd.getPropertyType() != java.lang.Class.class)
 					.collect(Collectors.toList());
 
-			Optional<TypeAdapter<?>> adapter =
-					adapters.stream().filter((a) -> a.getType().isAssignableFrom(o.getClass())).findAny();
-			if (adapter.isPresent()) {
-				cells.add(adapter.get().createCell(o, prefix + "/"));
+			if (adapters.containsKey(o.getClass())) {
+				cells.add(adapters.get(o.getClass()).createCell(o, prefix + "/"));
 			} else {
 
 				for (PropertyDescriptor pd : descriptors) {
@@ -112,12 +105,12 @@ public class ConverterFactory {
 		};
 	}
 
-	private static List<Row> getRows(Object o, ConverterFactory factory) {
+	private List<Row> getRows(Object o) {
 		if (Collection.class.isAssignableFrom(o.getClass())) {
-			return ((Collection<?>) o).stream().map(factory::findProperties).map(factory::createRow)
+			return ((Collection<?>) o).stream().map(this::findProperties).map(this::createRow)
 					.collect(Collectors.toList());
 		} else {
-			return Arrays.asList(factory.createRow(factory.findProperties(o)));
+			return Arrays.asList(createRow(findProperties(o)));
 		}
 	}
 
@@ -132,59 +125,26 @@ public class ConverterFactory {
 		};
 	}
 
-	public static Converter creatConverter() {
-		return new Converter() {
-			private List<TypeAdapter<?>> adapters = new ArrayList<>();
-
-			@Override
-			public CSV convert(Object o) {
-
-				return new CSV() {
-					private List<Row> rows = ConverterFactory.getRows(o, new ConverterFactory(adapters));
-
-					@Override
-					public List<Row> getRows() {
-						return rows;
-					}
-
-					@Override
-					public List<String> getHeaders() {
-						if (rows != null && !rows.isEmpty()) {
-							return rows.stream().max((r1, r2) -> r1.getCells().size() - r2.getCells().size())
-									.get().getCells().stream().map(Cell::getColumnName).collect(Collectors.toList());
-						}
-						return null;
-					}
-
-					@Override
-					public String toString() {
-						List<String> columns = getHeaders();
-						StringBuilder builder = new StringBuilder(String.join(";", columns)).append("\r\n");
-						for (Row row : rows) {
-							List<String> rowData = new ArrayList<>();
-							for (String column : columns) {
-								Optional<Cell> result = row.getCells().stream()
-										.filter(c -> c.getColumnName().equals(column)).findFirst();
-								rowData.add(
-										result.isPresent() && result.get().hasData() ? result.get().getData() : "");
-							}
-							builder.append(String.join(";", rowData)).append("\r\n");
-						}
-						return builder.toString();
-					}
-				};
-			}
-
-			@Override
-			public <T extends Collection<?>> CSV convert(T collection) {
-				return convert((Object) collection);
-			}
-
-			@Override
-			public <T> Converter registerTypeAdapter(TypeAdapter<T> adapter) {
-				this.adapters.add(adapter);
-				return this;
-			}
-		};
+	@Override
+	public CSV convert(Object o) {
+		return new CSVImpl(getRows(o), options);
 	}
+
+	@Override
+	public <T extends Collection<?>> CSV convert(T collection) {
+		return convert((Object) collection);
+	}
+
+	@Override
+	public Converter registerTypeAdapter(Class<?> c, TypeAdapter adapter) {
+		this.adapters.put(c, adapter);
+		return this;
+	}
+
+	@Override
+	public Converter withOption(String name, String value) {
+		options.put(name, value);
+		return this;
+	}
+
 }

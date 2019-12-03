@@ -20,5 +20,17 @@ public interface Converter {
 	 */
 	<T extends Collection<?>> CSV convert(T collection);
 
-	<T> Converter registerTypeAdapter(TypeAdapter<T> adapter);
+	Converter registerTypeAdapter(Class<?> c, TypeAdapter adapter);
+
+	/**
+	 * Configuration of the output. There are three default options:
+	 * headers -> present
+	 * quoated -> true
+	 * delimiter -> ","
+	 * 
+	 * @param name Option key
+	 * @param value Value for the key in String format
+	 * @return Converter implementation
+	 */
+	Converter withOption(String name, String value);
 }

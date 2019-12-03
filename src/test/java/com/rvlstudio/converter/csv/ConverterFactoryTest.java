@@ -135,7 +135,7 @@ public class ConverterFactoryTest {
 		t2.getNummers().add(5);
 		t2.getNummers().add(6);
 		t2.getLijst().add("second");
-		CSV csv = ConverterFactory.creatConverter().registerTypeAdapter(new TypeAdapter<Testing.Pair>() {
+		CSV csv = CSV.createConverter().registerTypeAdapter(Testing.Pair.class, new TypeAdapter() {
 
 					@Override
 					public Cell createCell(Object o, String prefix) {
@@ -158,13 +158,7 @@ public class ConverterFactoryTest {
 								return columnName;
 							}
 						};
-					}
-
-					@Override
-					public Class<?> getType() {
-						return Testing.Pair.class;
-					}
-			
+					}			
 		}).convert(Arrays.asList(t1, t2));
 		System.out.println(csv.toString());
 
