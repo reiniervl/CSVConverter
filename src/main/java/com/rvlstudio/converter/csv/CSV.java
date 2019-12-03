@@ -3,7 +3,16 @@ package com.rvlstudio.converter.csv;
 import java.util.List;
 
 /**
- * CSV
+ * Main interface for using this converter.
+ * Use the static method {@link CSV#createConverter} to get an implementing
+ * intance of a Converter interface to converter any Object to CSV.
+ * All publicly accessible properties of the object will be converterd in to CSV format.
+ * The {@link Object#toString} method is overriden to return the formatted CSV.
+ * 
+ * Usage:
+ * SomeClass someClass = ...
+ * CSV.createConverter().converter(someClass);
+ * System.out.println(CSV);
  */
 public interface CSV {
 	/**
@@ -23,6 +32,11 @@ public interface CSV {
 	 */
 	List<Row> getRows();
 
+	/**
+	 * Create a Converter implementation to convert an object to CSV.
+	 * 
+	 * @return Converter implementation
+	 */
 	public static Converter createConverter() {
 		return new ConverterImpl();
 	}
