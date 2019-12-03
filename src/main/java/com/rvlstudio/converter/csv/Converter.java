@@ -2,6 +2,11 @@ package com.rvlstudio.converter.csv;
 
 import java.util.Collection;
 
+/**
+ * The Converter converts an Object or collection of Objects in to CSV
+ * Only the properties that have a public getter are converted. Number
+ * and String are not treated as compound structures.
+ */
 public interface Converter {
 	/**
 	 * Convert a single object in to one record

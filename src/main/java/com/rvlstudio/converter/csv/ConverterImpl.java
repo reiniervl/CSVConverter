@@ -29,7 +29,7 @@ class ConverterImpl implements Converter {
 		try {
 			BeanInfo info = Introspector.getBeanInfo(o.getClass());
 			List<PropertyDescriptor> descriptors = Arrays.stream(info.getPropertyDescriptors())
-					.filter(pd -> pd.getReadMethod() != null && pd.getPropertyType() != java.lang.Class.class)
+					.filter(pd -> pd.getReadMethod() != null && pd.getPropertyType() != Class.class)
 					.collect(Collectors.toList());
 
 			if (adapters.containsKey(o.getClass())) {
